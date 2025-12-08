@@ -29,6 +29,7 @@ class Settings:
         assert self.GOOGLE_CLIENT_ID is not None, "GOOGLE_CLIENT_ID is missing in .env"
         assert self.GOOGLE_CLIENT_SECRET is not None, "GOOGLE_CLIENT_SECRET is missing in .env"
         assert self.SECRET_KEY is not None, "SECRET_KEY is missing in .env"
+        assert self.IAMMETER_TOKEN is not None, "IAMMETER_TOKEN is missing in .env"
 
 
 settings = Settings()
