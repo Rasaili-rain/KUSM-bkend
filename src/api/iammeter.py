@@ -2,10 +2,10 @@ import requests
 from ..settings import settings
 from sqlalchemy.orm import Session
 from ..models import MeterDB, MeterDataDB, Phase
-from ..database import get_db
+from ..database import SessionLocal
 from datetime import datetime
 
-db: Session = next(get_db())
+db = SessionLocal()
 URL = 'https://www.iammeter.com/api/v1/site/meterdata2/'
 
 import requests
@@ -51,33 +51,46 @@ def fetch_meter_data(meter_sn:str):
         print("Fetch failed:", e)
         return None
 
-async def store_all_meter_data():
-    meters = db.query(MeterDB).all()
-    for meter in meters:
-        meter_data = fetch_meter_data(meter.sn)
-        phase_a = meter_data['phases']['A']
-        phase_b = meter_data['phases']['B']
-        phase_c = meter_data['phases']['C']
-        await insert_meterdata(phase_a, meter_data['times']['local'],Phase.PHASE_A, meter.meter_id)
-        await insert_meterdata(phase_b, meter_data['times']['local'],Phase.PHASE_B, meter.meter_id)
-        await insert_meterdata(phase_c, meter_data['times']['local'],Phase.PHASE_C, meter.meter_id)
-        print('data stored')
-
-async def insert_meterdata(readings, time, phase, meter_id):
+def insert_meterdata(db: Session, readings, time_str: str, phase: Phase, meter_id: int):
     data = MeterDataDB(
-        phase = phase,
-        current = readings['current'],
-        voltage = readings['voltage'],
-        active_power= readings['active_power'],
-        power_factor = readings['power_factor'],
-        grid_consumption = readings['grid_consumption'],
-        exported_power = readings['exported_power'],
-        timestamp = datetime.strptime(time, "%Y/%m/%d %H:%M:%S"),
-        meter_id = meter_id
+        phase=phase,
+        current=readings['current'],
+        voltage=readings['voltage'],
+        active_power=readings['active_power'],
+        power_factor=readings['power_factor'],
+        grid_consumption=readings['grid_consumption'],
+        exported_power=readings['exported_power'],
+        timestamp=datetime.strptime(time_str, "%Y/%m/%d %H:%M:%S"),
+        meter_id=meter_id,
     )
     db.add(data)
-    db.commit()
-    db.refresh(data)
-    print('works')
+
+
+def store_all_meter_data():
+    db: Session = SessionLocal()
+    try:
+        meters = db.query(MeterDB).all()
+
+        for meter in meters:
+            meter_data = fetch_meter_data(meter.sn)
+            if meter_data is None:
+                continue
+
+            phases = meter_data['phases']
+            time_str = meter_data['times']['local']
+
+            insert_meterdata(db, phases["A"], time_str, Phase.PHASE_A, meter.meter_id)
+            insert_meterdata(db, phases["B"], time_str, Phase.PHASE_B, meter.meter_id)
+            insert_meterdata(db, phases["C"], time_str, Phase.PHASE_C, meter.meter_id)
+
+            print(f"data stored for meter {meter.meter_id}")
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print("store_all_meter_data error:", e)
+        raise
+    finally:
+        db.close()
     
     

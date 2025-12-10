@@ -8,6 +8,7 @@ db_engine = create_engine(
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
+    pool_recycle=280
 )
 
 # Create session factory
