@@ -15,7 +15,7 @@ def get_all_meters(db: Session = Depends(get_db)):
         "count": len(meters),
         "data": [
             {
-                "id": m.meter_id,
+                "meter_id": m.meter_id,
                 "name": m.name,
                 "sn": m.sn	
             }
