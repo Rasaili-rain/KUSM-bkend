@@ -105,4 +105,9 @@ def store_all_meter_data():
     finally:
         db.close()
     
-    
+def get_meter_id_by_name(meter_name):
+    try:
+        meter_id = db.query(MeterDB.meter_id).filter(MeterDB.name == meter_name).scalar()
+        return meter_id
+    except Exception as e:
+        return e
