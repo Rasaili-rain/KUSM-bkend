@@ -4,17 +4,13 @@ from contextlib import asynccontextmanager
 import asyncio
 
 from .routes import meter, oauth, users
-from .database import db_engine
+from .database import db_engine, get_db
 from .models import Base
 from .api import iammeter
 from .init_meter import init_meter
 
 # Create database tables
 Base.metadata.create_all(bind=db_engine)
-
-# Creating entries in db for existing meters
-init_meter()
-
 
 async def data_collection():
     while True:
@@ -28,9 +24,16 @@ async def data_collection():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
  
-    task = asyncio.create_task(data_collection())
+    db = next(get_db())
     try:
-        yield  
+        init_meter(db)
+    finally:
+        db.close()
+    
+    task = asyncio.create_task(data_collection())
+
+    try:
+        yield
     finally:
         task.cancel()
         try:
