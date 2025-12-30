@@ -219,7 +219,8 @@ async def add_meter(request: Request, db: Session = Depends(get_db)):
     payload.setdefault("Province", "")
     payload.setdefault("City", "")
     payload.setdefault("Address", "")
-    payload.setdefault("Position", [27.619399267478876, 85.5388709190866])
+    payload.setdefault("Position", "27.619399267478876, 85.5388709190866")
+    payload.setdefault("DZPriceUnit", "NPR")
 
     if "Name" not in payload or "sn" not in payload:
         raise HTTPException(
