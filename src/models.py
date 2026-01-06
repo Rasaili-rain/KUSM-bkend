@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Column, Index, String, DateTime, Boolean, Float, Integer, ForeignKey, desc
+from sqlalchemy import Column, Index, String, DateTime, Boolean, Float, Integer, ForeignKey, desc, Text, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel, EmailStr
 
@@ -114,4 +114,38 @@ class EnergyDB(Base):
 
     __table_args__ = (
         Index("idx_energy_meter_timestamp", "meter_id", desc("timestamp")),
+    )
+
+class BillingDB(Base):
+    __tablename__ = "billing"
+
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(Text, nullable=False)
+    total_cost = Column(Float, nullable=False)
+    avg_cost_per_day = Column(Float, nullable=False)
+    expensive_day = Column(Integer, nullable=False)
+    expensive_day_cost = Column(Float, nullable=False)
+
+class CostPerDayDB(Base):
+    __tablename__ = "cost_per_day"
+
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(Text, nullable=False)
+    day = Column(Integer, nullable=False)
+    cost = Column(Float, nullable=False)
+
+class CostPerMeterDB(Base):
+    __tablename__ = "cost_per_meter"
+
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(Text, nullable=False)
+    meter_id = Column(
+        Integer,
+        ForeignKey("meters.meter_id", ondelete="CASCADE"),
+        nullable=False
+    )
+    cost = Column(Float, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("date", "meter_id", name="unique_constraint"),
     )

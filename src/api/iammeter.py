@@ -5,11 +5,11 @@ from ..models import CurrentDB, EnergyDB, MeterDB, PowerDB, VoltageDB
 from ..database import SessionLocal
 from datetime import datetime
 
+
 db = SessionLocal()
 URL = 'https://www.iammeter.com/api/v1/site/meterdata2/'
 IAMMETER_ADD_STATION_URL = 'https://www.iammeter.com/dz/user/BIZ_DZ_DianZhanSave/0'
 
-import requests
 
 def fetch_meter_data(meter_sn:str):
     params = {
@@ -50,10 +50,6 @@ def fetch_meter_data(meter_sn:str):
         print("Fetch failed:", e)
         return None
 
-from datetime import datetime
-
-from datetime import datetime
-from sqlalchemy.orm import Session
 
 def insert_meterdata(db: Session, meter_id: int, meter_data: dict):
     ts = datetime.strptime(meter_data["timestamp"], "%Y/%m/%d %H:%M:%S")
@@ -106,9 +102,6 @@ def insert_meterdata(db: Session, meter_id: int, meter_data: dict):
     )
 
     db.add_all([current, voltage, power, energy])
-
-
-
 
 def store_all_meter_data():
     db: Session = SessionLocal()

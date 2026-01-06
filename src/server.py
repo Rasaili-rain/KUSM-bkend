@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
 
-from .routes import meter, oauth, users, analysis
+from .routes import meter, oauth, users, analysis, billing
 from .database import db_engine, get_db
 from .models import Base
 from .api import iammeter
@@ -42,6 +42,9 @@ async def lifespan(app: FastAPI):
             pass
 
 
+# billing.get_power_per_meter_per_day(2024, 1, 9, next(get_db()))
+# billing.calculate_bill(2024, 1, next(get_db()))
+
 app = FastAPI(
     title="KU Smart Meeter",
     version="1.0.0",
@@ -62,6 +65,7 @@ app.include_router(oauth.router)
 app.include_router(users.router)
 app.include_router(meter.router)
 app.include_router(analysis.router)
+app.include_router(billing.router)
 
 @app.get("/")
 async def root():
