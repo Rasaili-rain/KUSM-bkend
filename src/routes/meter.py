@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 from ..models import CurrentDB, EnergyDB, MeterDB, PowerDB, VoltageDB
 from ..database import get_db
 from ..init_meter import init_meter, remove_meter
@@ -26,7 +27,7 @@ class MeterLocationItem(BaseModel):
 class BulkLocationUpdate(BaseModel):
     locations: List[MeterLocationItem]
 
-@router.get("/")
+@router.get("")
 def get_all_meters(db: Session = Depends(get_db)):
     meters = db.query(MeterDB).all()
 
@@ -110,51 +111,53 @@ def get_todays_data(meter_name: str, db: Session = Depends(get_db)):
     today = date.today()
     start = datetime.combine(today, time.min)
     end = datetime.combine(today, time.max)
-
-    rows = (
-        db.query(
-            CurrentDB,
-            VoltageDB,
-            PowerDB,
-            EnergyDB
+    try:
+        rows = (
+            db.query(
+                CurrentDB,
+                VoltageDB,
+                PowerDB,
+                EnergyDB
+            )
+            .join(
+                VoltageDB,
+                (VoltageDB.meter_id == CurrentDB.meter_id) &
+                (VoltageDB.timestamp == CurrentDB.timestamp)
+            )
+            .join(
+                PowerDB,
+                (PowerDB.meter_id == CurrentDB.meter_id) &
+                (PowerDB.timestamp == CurrentDB.timestamp)
+            )
+            .join(
+                EnergyDB,
+                (EnergyDB.meter_id == CurrentDB.meter_id) &
+                (EnergyDB.timestamp == CurrentDB.timestamp)
+            )
+            .filter(
+                CurrentDB.meter_id == meter_id,
+                CurrentDB.timestamp.between(start, end)
+            )
+            .order_by(CurrentDB.timestamp)
+            .all()
         )
-        .join(
-            VoltageDB,
-            (VoltageDB.meter_id == CurrentDB.meter_id) &
-            (VoltageDB.timestamp == CurrentDB.timestamp)
-        )
-        .join(
-            PowerDB,
-            (PowerDB.meter_id == CurrentDB.meter_id) &
-            (PowerDB.timestamp == CurrentDB.timestamp)
-        )
-        .join(
-            EnergyDB,
-            (EnergyDB.meter_id == CurrentDB.meter_id) &
-            (EnergyDB.timestamp == CurrentDB.timestamp)
-        )
-        .filter(
-            CurrentDB.meter_id == meter_id,
-            CurrentDB.timestamp.between(start, end)
-        )
-        .order_by(CurrentDB.timestamp)
-        .all()
-    )
 
-    if not rows:
-        raise HTTPException(status_code=404, detail="No Data for Today")
+        if not rows:
+            raise HTTPException(status_code=404, detail="No Data for Today")
 
-    data = []
-    for c, v, p, e in rows:
-        data.append(convert_format(c, v, p, e))
+        data = []
+        for c, v, p, e in rows:
+            data.append(convert_format(c, v, p, e))
 
-    return {
-        "success": True,
-        "meter_name": meter_name,
-        "count": len(data),
-        "data": data
-    }
-
+        return {
+            "success": True,
+            "meter_name": meter_name,
+            "count": len(data),
+            "data": data
+        }
+    except SQLAlchemyError as e:
+        db.rollback()   
+        raise
 
 @router.get("/databydate")
 def get_data_by_date_range(
@@ -175,55 +178,59 @@ def get_data_by_date_range(
 
     start = datetime.combine(from_date, time.min)
     end = datetime.combine(to_date, time.max)
+    try:
+        rows = (
+            db.query(
+                CurrentDB,
+                VoltageDB,
+                PowerDB,
+                EnergyDB
+            )
+            .join(
+                VoltageDB,
+                (VoltageDB.meter_id == CurrentDB.meter_id) &
+                (VoltageDB.timestamp == CurrentDB.timestamp)
+            )
+            .join(
+                PowerDB,
+                (PowerDB.meter_id == CurrentDB.meter_id) &
+                (PowerDB.timestamp == CurrentDB.timestamp)
+            )
+            .join(
+                EnergyDB,
+                (EnergyDB.meter_id == CurrentDB.meter_id) &
+                (EnergyDB.timestamp == CurrentDB.timestamp)
+            )
+            .filter(
+                CurrentDB.meter_id == meter_id,
+                CurrentDB.timestamp.between(start, end)
+            )
+            .order_by(CurrentDB.timestamp)
+            .all()
+        )
 
-    rows = (
-        db.query(
-            CurrentDB,
-            VoltageDB,
-            PowerDB,
-            EnergyDB
-        )
-        .join(
-            VoltageDB,
-            (VoltageDB.meter_id == CurrentDB.meter_id) &
-            (VoltageDB.timestamp == CurrentDB.timestamp)
-        )
-        .join(
-            PowerDB,
-            (PowerDB.meter_id == CurrentDB.meter_id) &
-            (PowerDB.timestamp == CurrentDB.timestamp)
-        )
-        .join(
-            EnergyDB,
-            (EnergyDB.meter_id == CurrentDB.meter_id) &
-            (EnergyDB.timestamp == CurrentDB.timestamp)
-        )
-        .filter(
-            CurrentDB.meter_id == meter_id,
-            CurrentDB.timestamp.between(start, end)
-        )
-        .order_by(CurrentDB.timestamp)
-        .all()
-    )
+        if not rows:
+            return {
+                "success": False,
+                "message": "No data found for the given date range"
+            }
 
-    if not rows:
+        data = []
+        for c, v, p, e in rows:
+            data.append(convert_format(c, v, p, e))
+
         return {
-            "success": False,
-            "message": "No data found for the given date range"
+            "success": True,
+            "meter_name": meter_name,
+            "from_date": from_date,
+            "to_date": to_date,
+            "count": len(data),
+            "data": data
         }
+    except SQLAlchemyError as e:
+        db.rollback()   
+        raise
 
-    data = []
-    for c, v, p, e in rows:
-        data.append(convert_format(c, v, p, e))
-
-    return {
-        "success": True,
-        "meter_name": meter_name,
-        "from_date": from_date,
-        "to_date": to_date,
-        "count": len(data),
-        "data": data
-    }
     
 
 
