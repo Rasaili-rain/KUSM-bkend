@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
 
-from .routes import meter, oauth, users, analysis, billing
+from .routes import meter, oauth, users, analysis, billing, live_data
 from .database import db_engine, get_db
 from .models import Base
 from .api import iammeter
@@ -30,17 +30,17 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     
-    task = asyncio.create_task(data_collection())
+    # task = asyncio.create_task(data_collection())
 
     try:
         yield
     finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 # billing.get_power_per_meter_per_day(2024, 1, 9, next(get_db()))
 # billing.calculate_bill(2024, 1, next(get_db()))
@@ -66,6 +66,8 @@ app.include_router(users.router)
 app.include_router(meter.router)
 app.include_router(analysis.router)
 app.include_router(billing.router)
+app.include_router(live_data.router)
+
 
 @app.get("/")
 async def root():
