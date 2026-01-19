@@ -8,8 +8,9 @@ from ..api.billing import calculate_bill
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
+
 @router.get("/{year}/{month}")
-def bill(
+def get_bill(
     year: int,
     month: int,
     db: Session = Depends(get_db)
@@ -95,3 +96,19 @@ def bill(
     "avg_cost_per_weekday": avg_cost_per_week_days
   }
 
+
+@router.post("/{year}/{month}")
+def do_bill(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db)
+  ):
+
+  month_key = f"{year}-{month:02d}"
+
+  db.query(BillingDB).filter(BillingDB.date == month_key).delete()
+  db.query(CostPerDayDB).filter(CostPerDayDB.date == month_key).delete()
+  db.query(CostPerMeterDB).filter(CostPerMeterDB.date == month_key).delete()
+
+  calculate_bill(year, month, db)
+  return "Billing Calculated"

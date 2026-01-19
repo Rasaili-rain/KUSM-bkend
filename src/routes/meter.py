@@ -232,8 +232,6 @@ def get_data_by_date_range(
         db.rollback()   
         raise
 
-    
-
 
 @router.put("/{meter_id}/location")
 def update_meter_location(

@@ -1,33 +1,158 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy import func, desc
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, desc, cast, Date
 from sqlalchemy.orm import Session
 from ..models import EnergyDB, MeterDB, PowerDB, VoltageDB, CurrentDB
 from ..database import get_db
 from ..api.iammeter import voltage_status, calculate_unbalance, current_status
 from ..api.iammeter import get_meter_id_by_name
-from datetime import datetime
+from datetime import datetime, date
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
-@router.get("/avg_consumption")
-def get_consumption_and_power(db: Session = Depends(get_db)):
+@router.get("/avg_consumption_yearly")
+def get_yearly_consumption_and_power(
+    year: int = Query(..., ge=2000),
+    db: Session = Depends(get_db)
+):
+    start_date = date(year, 1, 1)
+    end_date = date(year + 1, 1, 1)
+
     meters = db.query(MeterDB).all()
     result = []
+
     for m in meters:
-        power_data = db.query(func.avg(PowerDB.phase_A_active_power),func.avg(PowerDB.phase_B_active_power),func.avg(PowerDB.phase_C_active_power)).filter(PowerDB.meter_id == m.meter_id).one()
-        energy_data = db.query(func.avg(EnergyDB.phase_A_grid_consumption),func.avg(EnergyDB.phase_B_grid_consumption),func.avg(EnergyDB.phase_C_grid_consumption)).filter(EnergyDB.meter_id == m.meter_id).one()
-        total_avg_power = 0
-        total_avg_energy = 0
-        
-        total_avg_power = sum(d or 0 for d in power_data)
-        total_avg_energy = sum(d or 0 for d in energy_data)
+        power_data = (
+            db.query(
+                func.avg(PowerDB.phase_A_active_power),
+                func.avg(PowerDB.phase_B_active_power),
+                func.avg(PowerDB.phase_C_active_power),
+            )
+            .filter(PowerDB.meter_id == m.meter_id)
+            .filter(PowerDB.timestamp >= start_date)
+            .filter(PowerDB.timestamp < end_date)
+            .one()
+        )
+
+        energy_data = (
+            db.query(
+                func.avg(EnergyDB.phase_A_grid_consumption),
+                func.avg(EnergyDB.phase_B_grid_consumption),
+                func.avg(EnergyDB.phase_C_grid_consumption),
+            )
+            .filter(EnergyDB.meter_id == m.meter_id)
+            .filter(EnergyDB.timestamp >= start_date)
+            .filter(EnergyDB.timestamp < end_date)
+            .one()
+        )
+
+        total_avg_power = sum(v or 0 for v in power_data)
+        total_avg_energy = sum(v or 0 for v in energy_data)
 
         result.append({
             "meter_name": m.name,
+            "year": year,
             "average_power": total_avg_power,
-            "average_energy": total_avg_energy
+            "average_energy": total_avg_energy,
         })
+
     return result
+
+
+@router.get("/prev_curr_power")
+def get_previous_current_power(db: Session = Depends(get_db)):
+    meters = db.query(MeterDB).all()
+    result = []
+
+    for m in meters:
+        latest_power = (
+            db.query(
+                PowerDB.phase_A_active_power,
+                PowerDB.phase_B_active_power,
+                PowerDB.phase_C_active_power,
+                PowerDB.timestamp,
+            )
+            .filter(PowerDB.meter_id == m.meter_id)
+            .order_by(desc(PowerDB.timestamp))
+            .first()
+        )
+
+        previous_power = (
+            db.query(
+                PowerDB.phase_A_active_power,
+                PowerDB.phase_B_active_power,
+                PowerDB.phase_C_active_power,
+                PowerDB.timestamp,
+            )
+            .filter(PowerDB.meter_id == m.meter_id)
+            .order_by(desc(PowerDB.timestamp))
+            .offset(1)
+            .first()
+        )
+
+        def avg_power(row):
+            if not row:
+                return None
+            return (
+                (row.phase_A_active_power or 0) +
+                (row.phase_B_active_power or 0) +
+                (row.phase_C_active_power or 0)
+            ) / 3
+
+        current_avg_power = avg_power(latest_power)
+        previous_avg_power = avg_power(previous_power)
+
+        result.append({
+            "meter_name": m.name,
+            "current_power": current_avg_power,
+            "previous_power": previous_avg_power,
+        })
+
+    return result
+
+
+
+@router.get("/avg_daily_energy")
+def get_avg_daily_energy_across_meters(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    db: Session = Depends(get_db)
+):
+    # per-meter daily energy
+    per_meter_daily = (
+        db.query(
+            cast(EnergyDB.timestamp, Date).label("day"),
+            EnergyDB.meter_id.label("meter_id"),
+            func.sum(
+                EnergyDB.phase_A_grid_consumption +
+                EnergyDB.phase_B_grid_consumption +
+                EnergyDB.phase_C_grid_consumption
+            ).label("meter_energy")
+        )
+        .filter(EnergyDB.timestamp >= from_date)
+        .filter(EnergyDB.timestamp < to_date)
+        .group_by("day", EnergyDB.meter_id)
+        .subquery()
+    )
+
+    # average across meters per day
+    daily_avg = (
+        db.query(
+            per_meter_daily.c.day,
+            func.avg(per_meter_daily.c.meter_energy).label("avg_energy")
+        )
+        .group_by(per_meter_daily.c.day)
+        .order_by(per_meter_daily.c.day)
+        .all()
+    )
+
+    return [
+        {
+            "date": row.day.isoformat(),
+            "average_energy": float(row.avg_energy)
+        }
+        for row in daily_avg
+    ]
+
     
 MONTHS = {
     1: "jan", 2: "feb", 3: "mar", 4: "apr",

@@ -146,8 +146,8 @@ def calculate_bill(year: int, month: int, db: Session):
 
   # Main calculation
   for day in range(1, total_days + 1):
-    if day in existing_days:
-      continue
+    # if day in existing_days:
+    #   continue
 
     meter_to_energy = get_power_per_meter_per_day(year, month, day, db)
 
