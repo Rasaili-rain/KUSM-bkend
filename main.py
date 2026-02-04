@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 import asyncio
 
 from src.scheduler import scheduler 
-from src.routes import meter, oauth, prediction, users, analysis, billing, data_collection, meter_status
+from src.routes import meter, prediction, analysis, billing, data_collection, meter_status
 from src.database import db_engine, get_db
 from src.models import Base
 from src.init_meter import init_meter
@@ -14,16 +14,16 @@ from src.ml_model import power_prediction_service
 
 # Create database tables
 # tun only when db changes
-Base.metadata.create_all(bind=db_engine)
+# Base.metadata.create_all(bind=db_engine)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
-    db = next(get_db())
-    try:
-        init_meter(db)
-    finally:
-        db.close()
+    # db = next(get_db())
+    # try:
+    #     init_meter(db)
+    # finally:
+    #     db.close()
 
     # Load ML model on startup
     try:
@@ -83,8 +83,6 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(oauth.router)
-app.include_router(users.router)
 app.include_router(meter.router)
 app.include_router(analysis.router)
 app.include_router(billing.router)

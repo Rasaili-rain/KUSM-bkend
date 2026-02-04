@@ -1,33 +1,8 @@
 from datetime import datetime
-from typing import Optional
 from sqlalchemy import Column, Index, String, DateTime, Boolean, Float, Integer, ForeignKey, desc, Text, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
-from pydantic import BaseModel, EmailStr
 
 Base = declarative_base()
-
-class UserDB(Base):
-    __tablename__ = "users"
-    
-    id = Column(String, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    name = Column(String, nullable=True)
-    picture = Column(String, nullable=True)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-class User(BaseModel):
-    id: str
-    email: EmailStr
-    name: Optional[str] = None
-    picture: Optional[str] = None
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class MeterDB(Base):
@@ -39,13 +14,6 @@ class MeterDB(Base):
     x = Column(Float, nullable=True)  # Map X coordinate (0-100%)
     y = Column(Float, nullable=True)  # Map Y coordinate (0-100%)
 
-class Meter(BaseModel):
-    meter_id: int
-    name: str
-    sn: str
-
-    class Config:
-        from_attributes = True
 
 # ------------------------
 class CurrentDB(Base):
