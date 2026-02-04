@@ -9,7 +9,7 @@ router = APIRouter(prefix="/data-collection", tags=["Data Collection"])
 class DataCollectionState:
     def __init__(self):
         self.is_running = False
-        self.repeat_interval = 5  # 5 minutes
+        self.repeat_interval = 5 * 60  # 5 minutes
         self.task: Optional[asyncio.Task] = None
     
     def start(self):
