@@ -6,9 +6,9 @@ import asyncio
 from src.models import PowerDB, MeterDB, MeterStatusDB
 from src.utils.email_service import send_email
 
-WINDOW_MINUTES = 10
+WINDOW_MINUTES = 60
 EPS = 1
-MIN_POINTS = 5
+MIN_POINTS = 10
 
 
 def is_flatline(values: list[float]) -> bool:
@@ -73,7 +73,6 @@ def update_flatline_status(db: Session):
         status.is_flatline = flat
         status.checked_at = now
 
-        # ✅ SEND EVERY SCHEDULER RUN IF FLATLINE TRUE
         if flat and alert_to:
             subject = f"🚨 Meter DOWN (Flatline) — ID {meter_id}"
             body = (
