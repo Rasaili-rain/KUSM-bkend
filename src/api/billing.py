@@ -112,86 +112,77 @@ def get_power_per_meter_per_day(year: int, month: int, day: int, db: Session):
     return meter_to_energy
 
 def calculate_bill(year: int, month: int, db: Session):
-  month_key = f"{year}-{month:02d}"
-  _, total_days = calendar.monthrange(year, month)
-
-  # Load existing billing row
-  billing = (
-    db.query(BillingDB)
-    .filter(BillingDB.date == month_key)
-    .first()
-  )
-
-  # Create default
-  if not billing:
+    month_key = f"{year}-{month:02d}"
+    _, total_days = calendar.monthrange(year, month)
+    
+    # Track total cost per meter for the entire month
+    meter_total_costs = {}
+    
+    # Temporary storage for new data
+    new_daily_costs = []
+    total_cost = 0
+    expensive_day = 0
+    expensive_day_cost = 0
+    
+    # Main calculation
+    for day in range(1, total_days + 1):
+        meter_to_energy = get_power_per_meter_per_day(year, month, day, db)
+        total_per_day = 0
+        
+        for meter_id, energy in meter_to_energy.items():
+            cost = energy * TARIFF
+            total_per_day += cost
+            
+            # Accumulate cost for this meter across all days
+            if meter_id not in meter_total_costs:
+                meter_total_costs[meter_id] = 0
+            meter_total_costs[meter_id] += cost
+        
+        # Store daily cost in temporary list
+        new_daily_costs.append(
+            CostPerDayDB(
+                date=month_key,
+                day=day,
+                cost=total_per_day
+            )
+        )
+        
+        total_cost += total_per_day
+        
+        # Update expensive day
+        if total_per_day > expensive_day_cost:
+            expensive_day = day
+            expensive_day_cost = total_per_day
+    
+    # Calculate average per day
+    days_count = len(new_daily_costs)
+    avg_cost_per_day = total_cost / days_count if days_count else 0
+    
+    # Now delete old data and insert new data atomically
+    db.query(CostPerDayDB).filter(CostPerDayDB.date == month_key).delete()
+    db.query(CostPerMeterDB).filter(CostPerMeterDB.date == month_key).delete()
+    db.query(BillingDB).filter(BillingDB.date == month_key).delete()
+    
+    # Insert all new daily costs
+    for daily_cost in new_daily_costs:
+        db.add(daily_cost)
+    
+    # Insert all meter costs
+    for meter_id, total_meter_cost in meter_total_costs.items():
+        db.add(CostPerMeterDB(
+            date=month_key,
+            meter_id=meter_id,
+            cost=total_meter_cost
+        ))
+    
+    # Create fresh billing record
     billing = BillingDB(
-      date=month_key,
-      total_cost=0,
-      avg_cost_per_day=0,
-      expensive_day=0,
-      expensive_day_cost=0,
+        date=month_key,
+        total_cost=total_cost,
+        avg_cost_per_day=avg_cost_per_day,
+        expensive_day=expensive_day,
+        expensive_day_cost=expensive_day_cost,
     )
     db.add(billing)
+    
     db.commit()
-
-  # Get existing days
-  existing_days = {
-    row.day
-    for row in db.query(CostPerDayDB.day)
-    .filter(CostPerDayDB.date == month_key)
-    .all()
-  }
-
-  # Main calculation
-  for day in range(1, total_days + 1):
-    # if day in existing_days:
-    #   continue
-
-    meter_to_energy = get_power_per_meter_per_day(year, month, day, db)
-
-    total_per_day = 0
-    for meter_id, energy in meter_to_energy.items():
-      cost = energy * TARIFF
-      total_per_day += cost
-
-      stmt = insert(CostPerMeterDB).values(
-        date=month_key,
-        meter_id=meter_id,
-        cost=cost
-      ).on_conflict_do_update(
-        constraint="unique_constraint",
-        set_={
-          "cost": CostPerMeterDB.cost + cost
-        }
-      )
-      db.execute(stmt)
-
-    # store daily cost
-    db.add(
-      CostPerDayDB(
-        date=month_key,
-        day=day,
-        cost=total_per_day
-      )
-    )
-
-    billing.total_cost += total_per_day
-
-    # update expensive day
-    if total_per_day > billing.expensive_day_cost:
-      billing.expensive_day = day
-      billing.expensive_day_cost = total_per_day
-
-
-  db.flush()
-
-  # Calculate average per day
-  days_count = db.query(CostPerDayDB).filter(
-      CostPerDayDB.date == month_key
-  ).count()
-
-  billing.avg_cost_per_day = (
-      billing.total_cost / days_count if days_count else 0
-  )
-
-  db.commit()

@@ -36,9 +36,8 @@ def daily_billing_job():
 
 scheduler.add_job(
     daily_billing_job,
-    trigger="cron",
-    hour=0,
-    minute=5,
+    trigger="interval",
+    hours=1,
     id="daily_billing_job",
     replace_existing=True
 )
