@@ -18,12 +18,13 @@ class UserLogin(BaseModel):
     password: str
 
 class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
     full_name: Optional[str] = None
-    is_active: Optional[bool] = None
 
 class PasswordChange(BaseModel):
     old_password: str
+    new_password: str = Field(..., min_length=8)
+
+class AdminPasswordChange(BaseModel):
     new_password: str = Field(..., min_length=8)
 
 class RoleUpdate(BaseModel):

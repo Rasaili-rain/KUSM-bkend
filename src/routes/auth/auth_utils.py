@@ -1,4 +1,3 @@
-# src/routes/auth/auth_utils.py
 from datetime import datetime, timedelta
 from typing import Optional, List
 from passlib.context import CryptContext

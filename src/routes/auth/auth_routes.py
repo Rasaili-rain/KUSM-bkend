@@ -5,11 +5,13 @@ from src.database import get_db
 from src.models import User, UserRole
 
 from src.routes.auth.auth_schemas import(
+    AdminPasswordChange,
     UserCreate,
     UserLogin,
     UserResponse,
     TokenResponse,
     PasswordChange,
+    UserUpdate,
     RoleUpdate,
     MessageResponse
 )
@@ -27,7 +29,6 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/login", response_model=TokenResponse)
 async def login(user_login: UserLogin, db: Session = Depends(get_db)):
-
     user = db.query(User).filter(User.email == user_login.email).first()
     
     if not user:
@@ -48,7 +49,6 @@ async def login(user_login: UserLogin, db: Session = Depends(get_db)):
             detail="User account is inactive"
         )
     
-    # Pass user.id as string
     access_token = create_access_token(data={"sub": str(user.id)})
     
     return TokenResponse(
@@ -62,13 +62,29 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
     return UserResponse.model_validate(current_user)
 
 
-@router.post("/change-password", response_model=MessageResponse)
-async def change_password(
+# Update own profile (name only)
+@router.patch("/me", response_model=UserResponse)
+async def update_own_profile(
+    user_update: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if user_update.full_name is not None:
+        current_user.full_name = user_update.full_name
+    
+    db.commit()
+    db.refresh(current_user)
+    
+    return UserResponse.model_validate(current_user)
+
+
+# Change own password
+@router.post("/me/change-password", response_model=MessageResponse)
+async def change_own_password(
     password_change: PasswordChange,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-
     if not verify_password(password_change.old_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
@@ -81,13 +97,57 @@ async def change_password(
     return MessageResponse(message="Password changed successfully")
 
 
+# Super admin can update any user's profile
+@router.patch("/users/{user_id}", response_model=UserResponse)
+async def update_user_profile(
+    user_id: int,
+    user_update: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_super_admin),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="User not found"
+        )
+    
+    if user_update.full_name is not None:
+        user.full_name = user_update.full_name
+    
+    db.commit()
+    db.refresh(user)
+    
+    return UserResponse.model_validate(user)
+
+
+# Super admin can change any user's password (without old password)
+@router.post("/users/{user_id}/reset-password", response_model=MessageResponse)
+async def reset_user_password(
+    user_id: int,
+    password_change: AdminPasswordChange,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_super_admin),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="User not found"
+        )
+    
+    user.hashed_password = get_password_hash(password_change.new_password)
+    db.commit()
+    
+    return MessageResponse(message=f"Password reset successfully for {user.email}")
+
+
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     user_create: UserCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_super_admin),
 ):
-
     # Check if email already exists
     existing_user = db.query(User).filter(User.email == user_create.email).first()
     if existing_user:
@@ -119,7 +179,6 @@ async def list_users(
     db: Session = Depends(get_db), 
     current_user: User = Depends(require_admin)
 ):
-
     users = db.query(User).offset(skip).limit(limit).all()
     return [UserResponse.model_validate(user) for user in users]
 
@@ -130,7 +189,6 @@ async def get_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
-
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
@@ -187,7 +245,6 @@ async def toggle_user_active(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_super_admin),
 ):
-
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
