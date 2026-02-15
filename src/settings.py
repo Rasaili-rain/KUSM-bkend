@@ -11,6 +11,7 @@ class Settings:
         self.IAMMETER_TOKEN = os.getenv("IAMMETER_TOKEN")
         self.IAMMETER_COOKIE = os.getenv("IAMMETER_COOKIE")
         self.ENV = os.getenv("ENV", "debug")
+        self.PORT = int(os.environ.get("PORT", 8000))
 
         self.ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 1
 

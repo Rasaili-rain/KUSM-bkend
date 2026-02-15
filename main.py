@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
+from src import settings
 from src.routes.auth import auth_routes
 from src.scheduler import scheduler
 from src.routes import (
@@ -96,6 +97,8 @@ if __name__ == "__main__":
     import sys
     import uvicorn
 
+    port = settings.PORT
+
     mode = "debug"
 
     if len(sys.argv) > 1:
@@ -108,7 +111,7 @@ if __name__ == "__main__":
             host="0.0.0.0",
             port=8000,
             reload=False,
-            workers=4,
+            workers=1,
         )
     else:
         print("Running in DEBUG mode")
