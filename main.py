@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
-from src import settings
+from src.settings import settings
 from src.routes.auth import auth_routes
 from src.scheduler import scheduler
 from src.routes import (
@@ -97,8 +97,6 @@ if __name__ == "__main__":
     import sys
     import uvicorn
 
-    port = settings.PORT
-
     mode = "debug"
 
     if len(sys.argv) > 1:
@@ -109,7 +107,7 @@ if __name__ == "__main__":
         uvicorn.run(
             "main:app",
             host="0.0.0.0",
-            port=port,
+            port=settings.PORT,
             reload=False,
             workers=1,
         )
@@ -118,6 +116,6 @@ if __name__ == "__main__":
         uvicorn.run(
             "main:app",
             host="0.0.0.0",
-            port=port,
+            port=settings.PORT,
             reload=True,
         )
