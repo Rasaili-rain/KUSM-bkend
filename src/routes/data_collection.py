@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, field_validator
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from typing import Optional
 import asyncio
 from sqlalchemy.orm import Session
+from zoneinfo import ZoneInfo
 
 from src.api import iammeter
 from src.routes.auth.auth_utils import require_admin, get_current_user
@@ -12,29 +13,42 @@ from src.database import get_db
 
 router = APIRouter(prefix="/data-collection", tags=["Data Collection"])
 
+NEPAL_TZ = ZoneInfo("Asia/Kathmandu")
+
+
+def get_nepal_time() -> datetime:
+    return datetime.now(NEPAL_TZ)
+
 
 class ScheduleInput(BaseModel):
-    start_time: str = Field(..., example="08:00")
-    end_time: str = Field(..., example="18:00")
+    start_datetime: str = Field(..., example="2025-02-15T08:00")
+    end_datetime: str = Field(..., example="2025-02-15T18:00")
     interval_minutes: int = Field(..., ge=1, le=1440, example=5)
 
-    @field_validator("start_time", "end_time")
+    @field_validator("start_datetime", "end_datetime")
     @classmethod
-    def validate_time_format(cls, v):
+    def validate_datetime_format(cls, v):
         try:
-            time.fromisoformat(v)
+            # Parse as ISO format datetime string (can be with or without timezone)
+            if "T" in v:
+                # Try parsing with datetime
+                datetime.fromisoformat(v.replace("Z", "+00:00"))
+            else:
+                raise ValueError("DateTime must include both date and time")
             return v
-        except ValueError:
-            raise ValueError("Time must be in HH:MM format")
+        except ValueError as e:
+            raise ValueError(f"DateTime must be in ISO format (YYYY-MM-DDTHH:MM): {e}")
 
-    @field_validator("end_time")
+    @field_validator("end_datetime")
     @classmethod
     def validate_end_after_start(cls, v, info):
-        if info.data.get("start_time"):
-            start = time.fromisoformat(info.data["start_time"])
-            end = time.fromisoformat(v)
+        if info.data.get("start_datetime"):
+            start = datetime.fromisoformat(
+                info.data["start_datetime"].replace("Z", "+00:00")
+            )
+            end = datetime.fromisoformat(v.replace("Z", "+00:00"))
             if end <= start:
-                raise ValueError("end_time must be after start_time")
+                raise ValueError("end_datetime must be after start_datetime")
         return v
 
 
@@ -50,36 +64,53 @@ class CollectionState:
     def is_within_schedule(self) -> bool:
         if not self.schedule:
             return True
-        now = datetime.now().time()
-        start = time.fromisoformat(self.schedule.start_time)
-        end = time.fromisoformat(self.schedule.end_time)
+        now = get_nepal_time()
+        # Parse the datetime strings (they're in Nepal time)
+        start = datetime.fromisoformat(
+            self.schedule.start_datetime.replace("Z", "+00:00")
+        )
+        end = datetime.fromisoformat(self.schedule.end_datetime.replace("Z", "+00:00"))
+
+        # Ensure timezone awareness
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=NEPAL_TZ)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=NEPAL_TZ)
+
         return start <= now <= end
 
     def calculate_next_run(self) -> datetime:
-        """Calculate when the next collection should run"""
         if not self.schedule:
             # No schedule, just add interval to now
             interval = 5 * 60  # default 5 minutes
-            return datetime.now() + timedelta(seconds=interval)
+            return get_nepal_time() + timedelta(seconds=interval)
 
         interval = self.schedule.interval_minutes * 60
-        next_time = datetime.now() + timedelta(seconds=interval)
+        now = get_nepal_time()
+        next_time = now + timedelta(seconds=interval)
 
-        # If we have a schedule window, check if next run is within it
-        now = datetime.now()
-        start = time.fromisoformat(self.schedule.start_time)
-        end = time.fromisoformat(self.schedule.end_time)
+        # Parse schedule datetimes
+        start_dt = datetime.fromisoformat(
+            self.schedule.start_datetime.replace("Z", "+00:00")
+        )
+        end_dt = datetime.fromisoformat(
+            self.schedule.end_datetime.replace("Z", "+00:00")
+        )
 
-        # Combine today's date with schedule times
-        start_datetime = datetime.combine(now.date(), start)
-        end_datetime = datetime.combine(now.date(), end)
+        # Ensure timezone awareness
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=NEPAL_TZ)
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=NEPAL_TZ)
 
-        # If next run is after end time, schedule for tomorrow's start time
-        if next_time.time() > end:
-            next_time = datetime.combine(now.date() + timedelta(days=1), start)
-        # If we're currently before start time, schedule for today's start time
-        elif now.time() < start:
-            next_time = start_datetime
+        # If next run is after end datetime, we're done with this schedule
+        if next_time > end_dt:
+            # Schedule has ended, return end time
+            return end_dt
+
+        # If we're currently before start time, schedule for start time
+        if now < start_dt:
+            return start_dt
 
         return next_time
 
@@ -92,32 +123,51 @@ async def collection_task():
     while state.is_running:
         try:
             if state.is_within_schedule():
-                print(f"[{datetime.now()}] Collecting data...")
+                print(f"[{get_nepal_time()}] Collecting data...")
                 await asyncio.to_thread(iammeter.store_all_meter_data)
-                state.last_run = datetime.now()
-                print(f"[{datetime.now()}] Collection complete")
+                state.last_run = get_nepal_time()
+                print(f"[{get_nepal_time()}] Collection complete")
             else:
-                print(f"[{datetime.now()}] Outside schedule window, skipping")
+                print(f"[{get_nepal_time()}] Outside schedule window, skipping")
 
         except Exception as e:
             print(f"Collection error: {e}")
 
         # Calculate next run time
         interval = state.schedule.interval_minutes * 60 if state.schedule else 5 * 60
-        state.next_run = datetime.now() + timedelta(seconds=interval)
+        state.next_run = get_nepal_time() + timedelta(seconds=interval)
 
         # Adjust next_run if outside schedule window
-        if state.schedule and not state.is_within_schedule():
-            now = datetime.now()
-            start = time.fromisoformat(state.schedule.start_time)
-            # If outside window, next run is tomorrow's start time
-            if now.time() > time.fromisoformat(state.schedule.end_time):
-                state.next_run = datetime.combine(now.date() + timedelta(days=1), start)
-            else:
-                # We're before start time, so next run is today's start time
-                state.next_run = datetime.combine(now.date(), start)
+        if state.schedule:
+            now = get_nepal_time()
+            end_dt = datetime.fromisoformat(
+                state.schedule.end_datetime.replace("Z", "+00:00")
+            )
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=NEPAL_TZ)
+
+            # If we've passed the end datetime, stop the collection
+            if now > end_dt:
+                print(f"[{get_nepal_time()}] Schedule ended, stopping collection")
+                state.is_running = False
+                break
+
+            # If next run would be after end time, schedule for end time
+            if state.next_run > end_dt:
+                state.next_run = end_dt
 
         await asyncio.sleep(interval)
+
+
+@router.get("/current-time")
+async def get_current_time(current_user: User = Depends(get_current_user)):
+    """Get current Nepal time"""
+    nepal_time = get_nepal_time()
+    return {
+        "current_time": nepal_time.strftime("%H:%M"),
+        "current_datetime": nepal_time.isoformat(),
+        "timezone": "Asia/Kathmandu",
+    }
 
 
 @router.get("/status")
@@ -126,8 +176,8 @@ async def get_status(current_user: User = Depends(get_current_user)):
     return {
         "is_running": state.is_running,
         "schedule": {
-            "start_time": state.schedule.start_time,
-            "end_time": state.schedule.end_time,
+            "start_datetime": state.schedule.start_datetime,
+            "end_datetime": state.schedule.end_datetime,
             "interval_minutes": state.schedule.interval_minutes,
         }
         if state.schedule
@@ -135,6 +185,7 @@ async def get_status(current_user: User = Depends(get_current_user)):
         "last_run": state.last_run.isoformat() if state.last_run else None,
         "next_run": state.next_run.isoformat() if state.next_run else None,
         "is_within_schedule": state.is_within_schedule() if state.is_running else None,
+        "current_nepal_time": get_nepal_time().isoformat(),
     }
 
 
@@ -151,11 +202,12 @@ async def start_collection(
     # Save to database
     db.query(DataCollectionScheduleDB).update({"is_active": False})
     new_schedule = DataCollectionScheduleDB(
-        start_time=schedule.start_time,
-        end_time=schedule.end_time,
+        start_datetime=schedule.start_datetime,
+        end_datetime=schedule.end_datetime,
         interval_minutes=schedule.interval_minutes,
         is_active=True,
         created_by=current_user.id,
+        created_at=get_nepal_time(),
     )
     db.add(new_schedule)
     db.commit()
@@ -204,10 +256,10 @@ async def run_now(current_user: User = Depends(require_admin)):
     """Manually trigger data collection once"""
     try:
         await asyncio.to_thread(iammeter.store_all_meter_data)
-        state.last_run = datetime.now()
+        state.last_run = get_nepal_time()
         return {
             "message": "Collection executed",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": get_nepal_time().isoformat(),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

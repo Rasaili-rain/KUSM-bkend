@@ -16,9 +16,18 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
+from zoneinfo import ZoneInfo
 
 
 Base = declarative_base()
+
+# Nepal timezone
+NEPAL_TZ = ZoneInfo("Asia/Kathmandu")
+
+
+def get_nepal_time():
+    """Get current time in Nepal timezone"""
+    return datetime.now(NEPAL_TZ)
 
 
 class MeterDB(Base):
@@ -166,12 +175,29 @@ class DataCollectionScheduleDB(Base):
     __tablename__ = "data_collection_schedule"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    start_time = Column(String(5), nullable=False)  # HH:MM format
-    end_time = Column(String(5), nullable=False)  # HH:MM format
+    start_datetime = Column(
+        DateTime(timezone=True), nullable=False
+    )  # Full datetime with timezone (Nepal time)
+    end_datetime = Column(
+        DateTime(timezone=True), nullable=False
+    )  # Full datetime with timezone (Nepal time)
     interval_minutes = Column(Integer, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=get_nepal_time, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=get_nepal_time,
+        onupdate=get_nepal_time,
+        nullable=True,
+    )
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    def __repr__(self):
+        return (
+            f"<DataCollectionSchedule(id={self.id}, "
+            f"start={self.start_datetime}, end={self.end_datetime}, "
+            f"interval={self.interval_minutes}min, active={self.is_active})>"
+        )
 
 
 class UserRole(str, Enum):
