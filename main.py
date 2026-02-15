@@ -4,12 +4,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
-
 from src.routes.auth import auth_routes
-from src.scheduler import scheduler 
-from src.routes import meter, meter_edits, prediction, analysis, billing, data_collection, meter_status
+from src.scheduler import scheduler
+from src.routes import (
+    meter,
+    meter_edits,
+    prediction,
+    analysis,
+    billing,
+    data_collection,
+    meter_status,
+)
 from src.ml_model import power_prediction_service
-
 
 
 @asynccontextmanager
@@ -23,8 +29,7 @@ async def lifespan(app: FastAPI):
         print("ML model not found. Train a model using /api/prediction/train endpoint")
     except Exception as e:
         print(f"Failed to load ML model: {e}")
-    
-    
+
     # Start scheduler
     scheduler.start()
     # Data collection starts as OFF by default
@@ -33,7 +38,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         print("Shutting down...")
-        
+
         # Stop data collection task
         if data_collection.data_collection_state.task:
             data_collection.data_collection_state.stop()
@@ -41,18 +46,17 @@ async def lifespan(app: FastAPI):
                 data_collection.data_collection_state.task.cancel()
                 try:
                     await asyncio.wait_for(
-                        data_collection.data_collection_state.task, 
-                        timeout=5.0
+                        data_collection.data_collection_state.task, timeout=5.0
                     )
                 except (asyncio.CancelledError, asyncio.TimeoutError):
                     pass
-        
+
         # Shutdown scheduler
         try:
             scheduler.shutdown(wait=False)
         except Exception as e:
             print(f"Error shutting down scheduler: {e}")
-        
+
         print("Shutdown complete")
 
 
@@ -83,19 +87,34 @@ app.include_router(prediction.router)
 app.include_router(meter_status.router)
 
 
-
-
 @app.get("/")
 async def root():
     return {"message": "KU Smart Meter API is running", "status": "healthy"}
 
 
 if __name__ == "__main__":
+    import sys
     import uvicorn
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000, 
-        reload=True
-    )
-    
+
+    mode = "debug"
+
+    if len(sys.argv) > 1:
+        mode = sys.argv[1].lower()
+
+    if mode == "prod":
+        print("Running in PRODUCTION mode")
+        uvicorn.run(
+            "main:app",
+            host="0.0.0.0",
+            port=8000,
+            reload=False,
+            workers=4,
+        )
+    else:
+        print("Running in DEBUG mode")
+        uvicorn.run(
+            "main:app",
+            host="0.0.0.0",
+            port=8000,
+            reload=True,
+        )
