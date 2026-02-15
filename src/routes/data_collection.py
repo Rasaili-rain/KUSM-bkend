@@ -29,15 +29,21 @@ class ScheduleInput(BaseModel):
     @classmethod
     def validate_datetime_format(cls, v):
         try:
-            # Parse as ISO format datetime string (can be with or without timezone)
+            # Handle various ISO format inputs
+            # "2025-02-15T14:30" or "2025-02-15T14:30:00"
             if "T" in v:
-                # Try parsing with datetime
+                # Add seconds if missing
+                if v.count(":") == 1:  # Only has hours and minutes
+                    v = v + ":00"
+                # Try parsing
                 datetime.fromisoformat(v.replace("Z", "+00:00"))
             else:
                 raise ValueError("DateTime must include both date and time")
             return v
         except ValueError as e:
-            raise ValueError(f"DateTime must be in ISO format (YYYY-MM-DDTHH:MM): {e}")
+            raise ValueError(
+                f"DateTime must be in ISO format (YYYY-MM-DDTHH:MM or YYYY-MM-DDTHH:MM:SS): {e}"
+            )
 
     @field_validator("end_datetime")
     @classmethod
