@@ -41,13 +41,13 @@ async def lifespan(app: FastAPI):
         print("Shutting down...")
 
         # Stop data collection task
-        if data_collection.data_collection_state.task:
-            data_collection.data_collection_state.stop()
-            if not data_collection.data_collection_state.task.done():
-                data_collection.data_collection_state.task.cancel()
+        if data_collection.state.task:
+            data_collection.state.is_running = False
+            if not data_collection.state.task.done():
+                data_collection.state.task.cancel()
                 try:
                     await asyncio.wait_for(
-                        data_collection.data_collection_state.task, timeout=5.0
+                        data_collection.state.task, timeout=5.0
                     )
                 except (asyncio.CancelledError, asyncio.TimeoutError):
                     pass
